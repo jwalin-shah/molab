@@ -114,8 +114,8 @@ def _(np):
 
 
     def materialize_relation(E: np.ndarray, R_hat: np.ndarray) -> np.ndarray:
-        """Recover full N×N relation matrix: D[x,y] = e_x^T R e_y. Pure einsum."""
-        return np.einsum("xi,ij,yj->xy", E, R_hat, E)
+        """Recover full N×N relation matrix: D[x,y] = e_x^T R e_y."""
+        return E @ R_hat @ E.T
     return (
         embed_relation,
         materialize_relation,
@@ -475,9 +475,9 @@ def _(
         return results
 
     stress = stress_random_dag(
-        N=30, depth=4,
-        d_values=[16, 32, 64, 128, 256],
-        n_seeds=3, edge_prob=0.06,
+        N=45, depth=5,
+        d_values=[16, 32, 64, 128, 256, 512, 1024],
+        n_seeds=3, edge_prob=0.05,
     )
     return (stress,)
 
@@ -492,7 +492,7 @@ def _(plt, stress):
     ax_s.set_xscale("log", base=2)
     ax_s.set_xlabel("embedding dim D (log scale)")
     ax_s.set_ylabel("F1 vs symbolic truth")
-    ax_s.set_title("Stress test: N=40 random DAG, depth=5")
+    ax_s.set_title("Stress test: N=45 random DAG, depth=5 (mean over 3 seeds)")
     ax_s.legend(loc="lower right")
     ax_s.grid(alpha=0.3, which="both")
     ax_s.set_ylim(-0.05, 1.05)
@@ -500,6 +500,16 @@ def _(plt, stress):
     for x, nb in zip(stress["D"], stress["noise_bound"]):
         ax_s.annotate(f"σ≈{nb:.2f}", xy=(x, -0.02), ha="center", fontsize=7,
                       color="gray")
+    # mark the crossover between naive and safe
+    import numpy as _np
+    _diff = _np.array(stress["safe_f1"]) - _np.array(stress["naive_f1"])
+    _signs = _np.sign(_diff)
+    _crossings = _np.where(_np.diff(_signs) > 0)[0]
+    if len(_crossings):
+        _i = int(_crossings[0])
+        _x_cross = (stress["D"][_i] * stress["D"][_i + 1]) ** 0.5
+        ax_s.axvline(_x_cross, color="k", ls=":", alpha=0.5)
+        ax_s.text(_x_cross, 0.05, "  crossover", fontsize=8, alpha=0.7)
     fig_stress.tight_layout()
     fig_stress
     return
@@ -511,15 +521,17 @@ def _(mo):
         r"""
         **There it is.** The actual story:
 
-        1. **Below $D \approx N$**: both methods collapse to F1 $\approx 0.1$.
-           Predicted noise $\sqrt{N/D} > 1$ swamps the signal entirely.
-        2. **Around $D \approx 2N \dots 4N$**: naive chain partially recovers
-           (F1 $\approx 0.3 - 0.5$); **threshold-and-re-embed actually does
-           worse**. The mitigation re-embeds the noisy materialized matrix,
-           freezing in spurious edges that compounding then amplifies. Domingos
-           doesn't mention this regime.
-        3. **Beyond $D \approx 6N$**: both work; re-embedding pulls slightly
-           ahead (F1 0.96 vs 0.88).
+        1. **$D \le N$** ($\sigma \gtrsim 1$): both methods collapse to F1
+           $\approx 0.08$. Predicted noise swamps the signal.
+        2. **$D \in [N, 6N]$** ($\sigma \approx 0.4\text{-}0.9$): **naive
+           wins**. It hits F1 $\approx 0.35\text{-}0.86$ while threshold-and-
+           re-embed sits at F1 $\approx 0.09\text{-}0.83$. The mitigation
+           re-embeds the noisy materialized matrix, freezing in spurious edges
+           that compounding then amplifies. Domingos doesn't mention this
+           regime.
+        3. **Beyond $D \approx 8N$** ($\sigma \lesssim 0.3$): a clean
+           crossover. Both work, and re-embedding now pulls ahead (F1 0.93
+           vs 0.84 at $D{=}512$; 0.998 vs 0.99 at $D{=}1024$).
 
         The headline finding: **re-embedding is not a magic mitigation.** It
         only helps once $D$ is *already* in the sound regime. If you're noisy,
