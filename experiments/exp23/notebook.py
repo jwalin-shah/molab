@@ -433,8 +433,8 @@ def _(mo):
         regime; the bound from §2 is doing its job.
 
         The real failure mode appears when $\sqrt{N/D} \gtrsim 0.5$. To see it,
-        we need a bigger graph. The next cell stress-tests on a 40-node random
-        DAG, sweeping $D$ from 16 to 512.
+        we need a bigger graph. The next cell stress-tests on a 45-node random
+        DAG (depth 5), sweeping $D$ from 16 to 512.
         """
     )
     return
