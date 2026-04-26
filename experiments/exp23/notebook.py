@@ -9,79 +9,70 @@ def _():
     import marimo as mo
     import numpy as np
     import matplotlib.pyplot as plt
+
     return mo, np, plt
 
 
-# =============================================================================
-# §0  FRAME
-# =============================================================================
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        # exp23 — Sound Reasoning in Embedding Space?
+    mo.md(r"""
+    # exp23 — Sound Reasoning in Embedding Space?
 
-        > *Engaging with the central novel claim of* **Tensor Logic: The Language of AI**
-        > *(Domingos, 2025; arXiv:2510.12269), §5.*
+    > *Engaging with the central novel claim of* **Tensor Logic: The Language of AI**
+    > *(Domingos, 2025; arXiv:2510.12269), §5.*
 
-        Domingos argues tensor logic enables **sound reasoning in embedding space** —
-        a regime where, unlike LLMs, inference is provably correct at temperature 0,
-        with error vanishing as embedding dimension grows. This notebook stress-tests
-        that claim end-to-end:
+    Domingos argues tensor logic enables **sound reasoning in embedding space** —
+    a regime where, unlike LLMs, inference is provably correct at temperature 0,
+    with error vanishing as embedding dimension grows. This notebook stress-tests
+    that claim end-to-end:
 
-        | § | Question | Verdict |
-        |---|---|---|
-        | 1 | Does the construction (random embeddings + superposition) actually work? | yes, exact |
-        | 2 | Does the predicted error bound $\sigma \approx \sqrt{N/D}$ hold? | yes, to ~1% |
-        | 3 | Can we embed a Datalog program and run forward chaining in embedding space? | yes |
-        | 4 | How fast does error compound across multi-hop inference? | catastrophically |
-        | 5 | Does Domingos's *extract-threshold-re-embed* mitigation actually rescue it? | only past the noise threshold; *worse* in the moderate-D regime |
-        | 6 | Learned embeddings + temperature: when is "analogical" better than "deductive"? | when graph is incomplete |
-        | 7 | Phase diagram: where does soundness hold? | $D \gtrsim k \cdot N \cdot \log N$ for depth $k$ |
-        | 8 | What does the model *know*? Symbol grounding & world models. | nothing & maybe a path |
-        | 9 | **Our extension**: do *transformer* embeddings as $E$ enable held-out KG completion? | yes — recovers Spain→Madrid by analogy with zero training on that pair |
+    | § | Question | Verdict |
+    |---|---|---|
+    | 1 | Does the construction (random embeddings + superposition) actually work? | yes, exact |
+    | 2 | Does the predicted error bound $\sigma \approx \sqrt{N/D}$ hold? | yes, to ~1% |
+    | 3 | Can we embed a Datalog program and run forward chaining in embedding space? | yes |
+    | 4 | How fast does error compound across multi-hop inference? | catastrophically |
+    | 5 | Does Domingos's *extract-threshold-re-embed* mitigation actually rescue it? | only past the noise threshold; *worse* in the moderate-D regime |
+    | 6 | Learned embeddings + temperature: when is "analogical" better than "deductive"? | when graph is incomplete |
+    | 7 | Phase diagram: where does soundness hold? | $D \gtrsim k \cdot N \cdot \log N$ for depth $k$ |
+    | 8 | What does the model *know*? Symbol grounding & world models. | nothing & maybe a path |
+    | 9 | **Our extension**: do *transformer* embeddings as $E$ enable held-out KG completion? | yes — recovers Spain→Madrid by analogy with zero training on that pair |
 
-        **Punchline.** Domingos's bound is *exact* (§2). His mitigation is
-        *more brittle than advertised* (§4): re-embedding only helps once the
-        construction is already in its sound regime ($D \gg N$); below that, it
-        re-embeds noise and makes things worse. The honest win of the framework
-        is the **learned-embedding regime** (§5): analogical inference that
-        recovers held-out facts by structural similarity, with a temperature
-        dial between deductive ($T \to 0$, no hallucination, no inductive
-        power) and analogical ($T > 0$, generalization, calibrated
-        uncertainty).
-        """
-    )
+    **Punchline.** Domingos's bound is *exact* (§2). His mitigation is
+    *more brittle than advertised* (§4): re-embedding only helps once the
+    construction is already in its sound regime ($D \gg N$); below that, it
+    re-embeds noise and makes things worse. The honest win of the framework
+    is the **learned-embedding regime** (§5): analogical inference that
+    recovers held-out facts by structural similarity, with a temperature
+    dial between deductive ($T \to 0$, no hallucination, no inductive
+    power) and analogical ($T > 0$, generalization, calibrated
+    uncertainty).
+    """)
     return
 
 
-# =============================================================================
-# §1  CONSTRUCTION
-# =============================================================================
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        ## 1. The construction
+    mo.md(r"""
+    ## 1. The construction
 
-        For $N$ objects in dimension $D$, draw each object's embedding as a random
-        unit vector $\mathbf{e}_x \in \mathbb{R}^D$. Stack into matrix
-        $E \in \mathbb{R}^{N \times D}$.
+    For $N$ objects in dimension $D$, draw each object's embedding as a random
+    unit vector $\mathbf{e}_x \in \mathbb{R}^D$. Stack into matrix
+    $E \in \mathbb{R}^{N \times D}$.
 
-        **Set as superposition.** A set $S$ is represented by $\mathbf{s} = \sum_{x \in S} \mathbf{e}_x$.
-        Membership: $\mathbf{e}_A \cdot \mathbf{s} \approx \mathbb{1}[A \in S]$ with std $\sqrt{N/D}$.
+    **Set as superposition.** A set $S$ is represented by $\mathbf{s} = \sum_{x \in S} \mathbf{e}_x$.
+    Membership: $\mathbf{e}_A \cdot \mathbf{s} \approx \mathbb{1}[A \in S]$ with std $\sqrt{N/D}$.
 
-        **Binary relation as tensor superposition.** A relation $R \subseteq V \times V$ is
+    **Binary relation as tensor superposition.** A relation $R \subseteq V \times V$ is
 
-        $$\widehat{R} \;=\; \sum_{(x,y) \in R} \mathbf{e}_x \otimes \mathbf{e}_y \;\in\; \mathbb{R}^{D \times D}.$$
+    $$\widehat{R} \;=\; \sum_{(x,y) \in R} \mathbf{e}_x \otimes \mathbf{e}_y \;\in\; \mathbb{R}^{D \times D}.$$
 
-        Membership query for tuple $(A,B)$:
+    Membership query for tuple $(A,B)$:
 
-        $$D[A,B] \;=\; \mathbf{e}_A^\top \widehat{R}\, \mathbf{e}_B \;=\; \texttt{einsum('i,ij,j->', e\_A, R, e\_B)}.$$
+    $$D[A,B] \;=\; \mathbf{e}_A^\top \widehat{R}\, \mathbf{e}_B \;=\; \texttt{einsum('i,ij,j->', e\_A, R, e\_B)}.$$
 
-        Same Bloom-filter-style guarantee, now for tuples.
-        """
-    )
+    Same Bloom-filter-style guarantee, now for tuples.
+    """)
     return
 
 
@@ -116,30 +107,24 @@ def _(np):
     def materialize_relation(E: np.ndarray, R_hat: np.ndarray) -> np.ndarray:
         """Recover full N×N relation matrix: D[x,y] = e_x^T R e_y."""
         return E @ R_hat @ E.T
+
     return (
         embed_relation,
         materialize_relation,
-        membership_scores,
-        query_relation,
         random_embeddings,
         set_superposition,
     )
 
 
-# =============================================================================
-# §2  BOUND VALIDATION (with sliders)
-# =============================================================================
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        ## 2. Validating the $\sqrt{N/D}$ bound
+    mo.md(r"""
+    ## 2. Validating the $\sqrt{N/D}$ bound
 
-        Drag the sliders. We sweep set size $N$ at fixed $D$, run many random
-        trials, and compare empirical std of non-member scores against
-        Domingos's predicted $\sqrt{N/D}$.
-        """
-    )
+    Drag the sliders. We sweep set size $N$ at fixed $D$, run many random
+    trials, and compare empirical std of non-member scores against
+    Domingos's predicted $\sqrt{N/D}$.
+    """)
     return
 
 
@@ -153,7 +138,14 @@ def _(mo):
 
 
 @app.cell
-def _(d_slider, n_max_slider, np, random_embeddings, set_superposition, trials_slider):
+def _(
+    d_slider,
+    n_max_slider,
+    np,
+    random_embeddings,
+    set_superposition,
+    trials_slider,
+):
     def sweep_bound(d, n_max, trials):
         ns = np.arange(10, n_max + 1, max(1, n_max // 20))
         emp_std = np.zeros_like(ns, dtype=float)
@@ -199,43 +191,38 @@ def _(d_slider, emp_std, mem_mean, ns, plt, theo_std):
     return
 
 
-# =============================================================================
-# §3  EMBED A DATALOG PROGRAM, FORWARD-CHAIN IN EMBEDDING SPACE
-# =============================================================================
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        ## 3. Embedding a Datalog program
+    mo.md(r"""
+    ## 3. Embedding a Datalog program
 
-        Consider the canonical program:
+    Consider the canonical program:
 
-        ```
-        ancestor(x, z) :- parent(x, z).
-        ancestor(x, z) :- parent(x, y), ancestor(y, z).
-        ```
+    ```
+    ancestor(x, z) :- parent(x, z).
+    ancestor(x, z) :- parent(x, y), ancestor(y, z).
+    ```
 
-        Symbolically: iterate $A \leftarrow P \cup (P \circ A)$ until fixed point.
+    Symbolically: iterate $A \leftarrow P \cup (P \circ A)$ until fixed point.
 
-        In **embedding space**, each relation lives as a $D \times D$ tensor
-        $\widehat{P}, \widehat{A}$. The rule body becomes one einsum:
+    In **embedding space**, each relation lives as a $D \times D$ tensor
+    $\widehat{P}, \widehat{A}$. The rule body becomes one einsum:
 
-        $$\widehat{A}_{\text{new}}[i,j] \;=\; \widehat{P}[i,j] \;+\; \mathrm{einsum}(\texttt{'ik,kl,lj,->ij'}, \widehat{P}, M, \widehat{A})$$
+    $$\widehat{A}_{\text{new}}[i,j] \;=\; \widehat{P}[i,j] \;+\; \mathrm{einsum}(\texttt{'ik,kl,lj,->ij'}, \widehat{P}, M, \widehat{A})$$
 
-        where $M = E^\top E$ is the **identity-resolver** matrix (it converts an
-        outgoing-arg embedding into an incoming-arg embedding by passing through
-        all $N$ objects). Domingos calls this the bridge: composing two
-        embedded relations requires *resolving* the shared variable $y$ through
-        the object embeddings.
+    where $M = E^\top E$ is the **identity-resolver** matrix (it converts an
+    outgoing-arg embedding into an incoming-arg embedding by passing through
+    all $N$ objects). Domingos calls this the bridge: composing two
+    embedded relations requires *resolving* the shared variable $y$ through
+    the object embeddings.
 
-        Equivalently, since $E^\top E \approx I_D$ when $D \ge N$:
+    Equivalently, since $E^\top E \approx I_D$ when $D \ge N$:
 
-        $$\widehat{A}_{\text{new}} \;\approx\; \widehat{P} + \widehat{P}\, \widehat{A}.$$
+    $$\widehat{A}_{\text{new}} \;\approx\; \widehat{P} + \widehat{P}\, \widehat{A}.$$
 
-        That's it: matrix product = relational composition. Watch what happens
-        when we iterate this without intervention vs. with re-embedding.
-        """
-    )
+    That's it: matrix product = relational composition. Watch what happens
+    when we iterate this without intervention vs. with re-embedding.
+    """)
     return
 
 
@@ -266,6 +253,7 @@ def _(np):
                 return A
             A = new
         return A
+
     return family_tree, transitive_closure
 
 
@@ -277,36 +265,29 @@ def _(family_tree, np, transitive_closure):
     P_bool[fam_parent_edges[:, 0], fam_parent_edges[:, 1]] = True
     A_truth_bool = transitive_closure(P_bool)
     n_truth_pairs = int(A_truth_bool.sum())
-    return A_truth_bool, N_FAM, P_bool, fam_names, fam_parent_edges, n_truth_pairs
+    return A_truth_bool, P_bool, fam_names, fam_parent_edges, n_truth_pairs
 
 
 @app.cell
 def _(A_truth_bool, mo, n_truth_pairs):
-    mo.md(
-        f"""
-        Family tree: 12 people, {int(A_truth_bool.diagonal().sum())} self-loops (none),
-        **{n_truth_pairs} ground-truth ancestor pairs**.
-        Maximum chain depth: 5 (Adam → Seth → Enos → Noah → Shem → Lot → Abe).
-        """
-    )
+    mo.md(f"""
+    Family tree: 12 people, {int(A_truth_bool.diagonal().sum())} self-loops (none),
+    **{n_truth_pairs} ground-truth ancestor pairs**.
+    Maximum chain depth: 5 (Adam → Seth → Enos → Noah → Shem → Lot → Abe).
+    """)
     return
 
 
-# =============================================================================
-# §4  FORWARD CHAINING IN EMBEDDING SPACE — NAIVE
-# =============================================================================
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        ### 3.1 Naive embedded forward chaining
+    mo.md(r"""
+    ### 3.1 Naive embedded forward chaining
 
-        Iterate $\widehat{A} \leftarrow \widehat{P} + \widehat{P}\,\widehat{A}$
-        in embedding space, never re-grounding. After each step, materialize the
-        full relation $D[x,y] = \mathbf{e}_x^\top \widehat{A}\,\mathbf{e}_y$ and
-        compare against ground truth.
-        """
-    )
+    Iterate $\widehat{A} \leftarrow \widehat{P} + \widehat{P}\,\widehat{A}$
+    in embedding space, never re-grounding. After each step, materialize the
+    full relation $D[x,y] = \mathbf{e}_x^\top \widehat{A}\,\mathbf{e}_y$ and
+    compare against ground truth.
+    """)
     return
 
 
@@ -375,7 +356,6 @@ def _(
     naive_metrics = [f1_at_threshold(h, A_truth_bool) for h in hist_naive]
     safe_metrics = [f1_at_threshold(h, A_truth_bool) for h in hist_safe]
     return (
-        E_chain,
         chain_naive,
         chain_threshold_reembed,
         f1_at_threshold,
@@ -421,22 +401,20 @@ def _(
 
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        **Read this plot honestly.** On this 12-node graph, both methods are
-        actually fine at $D \ge 256$. F1 climbs over depth and tops out
-        $\ge 0.9$ for naive, $\ge 0.95$ for re-embedded. The activations stay
-        bounded ($\le 2$). The dramatic story I wanted to tell — "naive
-        collapses by depth 3-4" — *isn't true here.* Why? With $N = 12$ and
-        $D = 256$ the predicted noise std is $\sqrt{12/256} \approx 0.22$,
-        which is well below the 0.5 threshold. We're sitting in the safe
-        regime; the bound from §2 is doing its job.
+    mo.md(r"""
+    **Read this plot honestly.** On this 12-node graph, both methods are
+    actually fine at $D \ge 256$. F1 climbs over depth and tops out
+    $\ge 0.9$ for naive, $\ge 0.95$ for re-embedded. The activations stay
+    bounded ($\le 2$). The dramatic story I wanted to tell — "naive
+    collapses by depth 3-4" — *isn't true here.* Why? With $N = 12$ and
+    $D = 256$ the predicted noise std is $\sqrt{12/256} \approx 0.22$,
+    which is well below the 0.5 threshold. We're sitting in the safe
+    regime; the bound from §2 is doing its job.
 
-        The real failure mode appears when $\sqrt{N/D} \gtrsim 0.5$. To see it,
-        we need a bigger graph. The next cell stress-tests on a 45-node random
-        DAG (depth 5), sweeping $D$ from 16 to 512.
-        """
-    )
+    The real failure mode appears when $\sqrt{N/D} \gtrsim 0.5$. To see it,
+    we need a bigger graph. The next cell stress-tests on a 45-node random
+    DAG (depth 5), sweeping $D$ from 16 to 512.
+    """)
     return
 
 
@@ -517,47 +495,40 @@ def _(plt, stress):
 
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        **There it is.** The actual story:
+    mo.md(r"""
+    **There it is.** The actual story:
 
-        1. **$D \le N$** ($\sigma \gtrsim 1$): both methods collapse to F1
-           $\approx 0.08$. Predicted noise swamps the signal.
-        2. **$D \in [N, 6N]$** ($\sigma \approx 0.4\text{-}0.9$): **naive
-           wins**. It hits F1 $\approx 0.35\text{-}0.86$ while threshold-and-
-           re-embed sits at F1 $\approx 0.09\text{-}0.83$. The mitigation
-           re-embeds the noisy materialized matrix, freezing in spurious edges
-           that compounding then amplifies. Domingos doesn't mention this
-           regime.
-        3. **Beyond $D \approx 8N$** ($\sigma \lesssim 0.3$): a clean
-           crossover. Both work, and re-embedding now pulls ahead (F1 0.93
-           vs 0.84 at $D{=}512$; 0.998 vs 0.99 at $D{=}1024$).
+    1. **$D \le N$** ($\sigma \gtrsim 1$): both methods collapse to F1
+       $\approx 0.08$. Predicted noise swamps the signal.
+    2. **$D \in [N, 6N]$** ($\sigma \approx 0.4\text{-}0.9$): **naive
+       wins**. It hits F1 $\approx 0.35\text{-}0.86$ while threshold-and-
+       re-embed sits at F1 $\approx 0.09\text{-}0.83$. The mitigation
+       re-embeds the noisy materialized matrix, freezing in spurious edges
+       that compounding then amplifies. Domingos doesn't mention this
+       regime.
+    3. **Beyond $D \approx 8N$** ($\sigma \lesssim 0.3$): a clean
+       crossover. Both work, and re-embedding now pulls ahead (F1 0.93
+       vs 0.84 at $D{=}512$; 0.998 vs 0.99 at $D{=}1024$).
 
-        The headline finding: **re-embedding is not a magic mitigation.** It
-        only helps once $D$ is *already* in the sound regime. If you're noisy,
-        re-embedding launders noise into structure. The honest precondition
-        for sound embedded reasoning is just $D \gg N$ — the periodic
-        re-grounding adds maybe a 1-2× improvement on top of that, not the
-        order-of-magnitude rescue Domingos's prose implies.
-        """
-    )
+    The headline finding: **re-embedding is not a magic mitigation.** It
+    only helps once $D$ is *already* in the sound regime. If you're noisy,
+    re-embedding launders noise into structure. The honest precondition
+    for sound embedded reasoning is just $D \gg N$ — the periodic
+    re-grounding adds maybe a 1-2× improvement on top of that, not the
+    order-of-magnitude rescue Domingos's prose implies.
+    """)
     return
 
 
-# =============================================================================
-# §5  PHASE DIAGRAM — D vs depth vs reliability
-# =============================================================================
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        ## 4. Phase diagram
+    mo.md(r"""
+    ## 4. Phase diagram
 
-        Sweep $(D, \text{depth})$ for fixed $N=12$. At each cell, run naive
-        chaining 30 trials with different seeds, measure mean F1. Color = where
-        Domingos's claim lives.
-        """
-    )
+    Sweep $(D, \text{depth})$ for fixed $N=12$. At each cell, run naive
+    chaining 30 trials with different seeds, measure mean F1. Color = where
+    Domingos's claim lives.
+    """)
     return
 
 
@@ -616,51 +587,44 @@ def _(d_grid, depth_grid, phase_grid, plt):
 
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        **The diagonal is the failure curve.** Every additional hop doubles the
-        $D$ you need to maintain F1. Empirically, the ridge sits at roughly
-        $D \gtrsim k \cdot N$ for depth $k$ and graph size $N$ — and that's just
-        for F1 ≈ 0.5, well below "sound."
+    mo.md(r"""
+    **The diagonal is the failure curve.** Every additional hop doubles the
+    $D$ you need to maintain F1. Empirically, the ridge sits at roughly
+    $D \gtrsim k \cdot N$ for depth $k$ and graph size $N$ — and that's just
+    for F1 ≈ 0.5, well below "sound."
 
-        Concretely: a 6-hop query on a 12-node graph needs $D \ge 256$ to be
-        even partially right. Scaling up: a 6-hop query on the FB15k-237 KG
-        from arXiv:2601.17188 ($N \approx 14{,}500$) would need $D \gtrsim
-        80{,}000$ for naive chaining to be sound. With re-embedding, $D \approx 1000$
-        suffices — but you've paid $N^2 = 2 \times 10^8$ memory per intermediate
-        materialization.
+    Concretely: a 6-hop query on a 12-node graph needs $D \ge 256$ to be
+    even partially right. Scaling up: a 6-hop query on the FB15k-237 KG
+    from arXiv:2601.17188 ($N \approx 14{,}500$) would need $D \gtrsim
+    80{,}000$ for naive chaining to be sound. With re-embedding, $D \approx 1000$
+    suffices — but you've paid $N^2 = 2 \times 10^8$ memory per intermediate
+    materialization.
 
-        The framework's elegance is real; its constants are punishing.
-        """
-    )
+    The framework's elegance is real; its constants are punishing.
+    """)
     return
 
 
-# =============================================================================
-# §6  LEARNED EMBEDDINGS + TEMPERATURE — analogical reasoning
-# =============================================================================
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        ## 5. Learned embeddings, temperature, and the analogical regime
+    mo.md(r"""
+    ## 5. Learned embeddings, temperature, and the analogical regime
 
-        Random embeddings give us a Bloom filter — useful for compression,
-        useless for generalization (every object is independent of every other).
+    Random embeddings give us a Bloom filter — useful for compression,
+    useless for generalization (every object is independent of every other).
 
-        **Domingos's pivot.** When embeddings are learned, $\mathrm{Sim} = E E^\top$
-        becomes a meaningful Gram matrix. Similar objects "borrow" inferences.
-        With sigmoid temperature $T$:
+    **Domingos's pivot.** When embeddings are learned, $\mathrm{Sim} = E E^\top$
+    becomes a meaningful Gram matrix. Similar objects "borrow" inferences.
+    With sigmoid temperature $T$:
 
-        - $T \to 0$: hard threshold → purely deductive reasoning, like §1-4
-        - $T \to \infty$: soft → analogical reasoning, similar entities share fates
+    - $T \to 0$: hard threshold → purely deductive reasoning, like §1-4
+    - $T \to \infty$: soft → analogical reasoning, similar entities share fates
 
-        This is the most novel and least-tested claim in the paper. We test it:
-        train embeddings to fit the parent relation, hold out one entity (Lot),
-        and ask whether the model can infer Lot's children from analogical
-        proximity to other entities.
-        """
-    )
+    This is the most novel and least-tested claim in the paper. We test it:
+    train embeddings to fit the parent relation, hold out one entity (Lot),
+    and ask whether the model can infer Lot's children from analogical
+    proximity to other entities.
+    """)
     return
 
 
@@ -699,6 +663,7 @@ def _(np):
         if T <= 0:
             return (x > 0.5).astype(float)
         return 1.0 / (1.0 + np.exp(-(x - 0.5) / T))
+
     return learn_embeddings, sigmoid, sim_matrix
 
 
@@ -717,20 +682,11 @@ def _(P_bool, fam_names, learn_embeddings, np):
     # Reconstruction quality on training
     pred_train = np.einsum("xi,ij,yj->xy", E_learned, R_learned, E_learned)
     train_recall = float((pred_train * P_train_float).sum() / P_train_float.sum())
-    return (
-        E_learned,
-        HELD_OUT,
-        P_train_float,
-        R_learned,
-        held_out_edges,
-        loss_hist,
-        pred_train,
-        train_recall,
-    )
+    return E_learned, HELD_OUT, held_out_edges, loss_hist, pred_train
 
 
 @app.cell
-def _(loss_hist, plt, sim_matrix, E_learned, fam_names):
+def _(E_learned, fam_names, loss_hist, plt, sim_matrix):
     fig5, (c1, c2) = plt.subplots(1, 2, figsize=(11, 4.5))
     c1.plot(loss_hist)
     c1.set(xlabel="step", ylabel="MSE loss", title="Training loss")
@@ -750,19 +706,17 @@ def _(loss_hist, plt, sim_matrix, E_learned, fam_names):
 
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        The learned embeddings have organized the family into a similarity
-        structure: people with similar *roles* in the parent relation cluster
-        together. Adam and Eve are similar (both roots), Cain/Abel/Seth are
-        similar (siblings), the Noah lineage clusters. **No one told the model
-        about generations or siblings — it inferred this from co-occurrence in
-        the parent relation.**
+    mo.md(r"""
+    The learned embeddings have organized the family into a similarity
+    structure: people with similar *roles* in the parent relation cluster
+    together. Adam and Eve are similar (both roots), Cain/Abel/Seth are
+    similar (siblings), the Noah lineage clusters. **No one told the model
+    about generations or siblings — it inferred this from co-occurrence in
+    the parent relation.**
 
-        That's the seed of analogical reasoning. Now we ask: can the model
-        recover Lot's hidden children by analogy?
-        """
-    )
+    That's the seed of analogical reasoning. Now we ask: can the model
+    recover Lot's hidden children by analogy?
+    """)
     return
 
 
@@ -775,9 +729,7 @@ def _(mo):
 
 @app.cell
 def _(
-    E_learned,
     HELD_OUT,
-    R_learned,
     fam_names,
     held_out_edges,
     np,
@@ -805,7 +757,9 @@ def _(
 
 @app.cell
 def _(mo, report):
-    mo.md(f"```\n{report}\n```")
+    mo.md(f"""
+    ```\n{report}\n```
+    """)
     return
 
 
@@ -848,142 +802,102 @@ def _(HELD_OUT, held_out_edges, np, plt, pred_train, sigmoid):
 
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        **Reading the curves.** At $T \to 0$ both populations collapse to 0
-        (everything below threshold) — *no inference at all*. At $T \to \infty$
-        both saturate at 0.5 — *no discrimination*. In between there is a window
-        where the held-out true children score systematically above the
-        non-children: **that gap is the analogical signal**. The framework
-        gives you a knob to dial it in directly, which an LLM at temperature 0
-        cannot do.
-        """
-    )
+    mo.md(r"""
+    **Reading the curves.** At $T \to 0$ both populations collapse to 0
+    (everything below threshold) — *no inference at all*. At $T \to \infty$
+    both saturate at 0.5 — *no discrimination*. In between there is a window
+    where the held-out true children score systematically above the
+    non-children: **that gap is the analogical signal**. The framework
+    gives you a knob to dial it in directly, which an LLM at temperature 0
+    cannot do.
+    """)
     return
 
 
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        Drag the temperature.
+    mo.md(r"""
+    Drag the temperature.
 
-        - At $T \to 0$: scores collapse to 0/1. The model says "I have no
-          evidence Lot has any children" because we removed those edges from
-          training. **Pure deduction → no inference beyond the data.**
-        - At moderate $T$ (say 0.3-0.7): Lot's row activates non-zero scores for
-          entities similar to children-of-the-people-Lot-resembles. Often Abe
-          (the actual held-out child) appears in the top-3.
-        - At high $T$: scores diffuse, model is willing to predict almost
-          anyone. Recall up, precision down.
+    - At $T \to 0$: scores collapse to 0/1. The model says "I have no
+      evidence Lot has any children" because we removed those edges from
+      training. **Pure deduction → no inference beyond the data.**
+    - At moderate $T$ (say 0.3-0.7): Lot's row activates non-zero scores for
+      entities similar to children-of-the-people-Lot-resembles. Often Abe
+      (the actual held-out child) appears in the top-3.
+    - At high $T$: scores diffuse, model is willing to predict almost
+      anyone. Recall up, precision down.
 
-        Domingos's framing is operational: $T$ is the dial between *Bloom filter*
-        (no generalization) and *kernel machine* (full analogical smoothing).
-        At $T=0$ the system is sound but has no inductive power; at $T \gg 0$ it
-        has inductive power but no soundness guarantee. There is no free lunch
-        — but the dial gives you the tradeoff explicitly, which is more than
-        an LLM does.
+    Domingos's framing is operational: $T$ is the dial between *Bloom filter*
+    (no generalization) and *kernel machine* (full analogical smoothing).
+    At $T=0$ the system is sound but has no inductive power; at $T \gg 0$ it
+    has inductive power but no soundness guarantee. There is no free lunch
+    — but the dial gives you the tradeoff explicitly, which is more than
+    an LLM does.
 
-        ## 6. Symbol grounding — what does the model *know*?
+    ## 6. Symbol grounding — what does the model *know*?
 
-        Run the temperature dial and notice: when the model predicts "Abe is
-        Lot's child," it's not because it understands fatherhood. It's because
-        the matrix labeled `parent` has structure that, after fitting,
-        produces a high score at coordinate `(Lot, Abe)`.
+    Run the temperature dial and notice: when the model predicts "Abe is
+    Lot's child," it's not because it understands fatherhood. It's because
+    the matrix labeled `parent` has structure that, after fitting,
+    produces a high score at coordinate `(Lot, Abe)`.
 
-        Rename `parent` to `frobnicates` and the model's behavior is identical.
-        It has learned the *extension* (which pairs satisfy the relation), never
-        the *intension* (what the relation means). This is the
-        **symbol grounding problem** in its starkest form, and tensor logic
-        doesn't solve it — it just makes it precisely visible.
+    Rename `parent` to `frobnicates` and the model's behavior is identical.
+    It has learned the *extension* (which pairs satisfy the relation), never
+    the *intension* (what the relation means). This is the
+    **symbol grounding problem** in its starkest form, and tensor logic
+    doesn't solve it — it just makes it precisely visible.
 
-        Where this gets interesting: a transformer "knows what an uncle is"
-        only in the sense that its embedding for `uncle` lives in a region of
-        $\mathbb{R}^d$ surrounded by `aunt`, `nephew`, `Christmas`,
-        `embarrassing-stories`. That's also a structural fact, just over text
-        co-occurrence instead of graph edges. **Neither system is grounded.
-        Both have learned distributional structure of different kinds.**
+    Where this gets interesting: a transformer "knows what an uncle is"
+    only in the sense that its embedding for `uncle` lives in a region of
+    $\mathbb{R}^d$ surrounded by `aunt`, `nephew`, `Christmas`,
+    `embarrassing-stories`. That's also a structural fact, just over text
+    co-occurrence instead of graph edges. **Neither system is grounded.
+    Both have learned distributional structure of different kinds.**
 
-        The actual frontier — and the place where this notebook's framework
-        could go next — is to *use a transformer's embeddings* as the initial
-        $E$ in this construction. Then the relations being composed live in a
-        space whose geometry was shaped by language. Tensor logic provides
-        compositional, sound machinery; the transformer provides
-        semantically-rich vectors. That's a real research direction (Neural
-        Theorem Provers, NLProlog, more recently hybrid retrieval-reasoning),
-        and tensor logic gives it a clean mathematical home.
-
-        ## 7. World models — does this framework reach there?
-
-        A world model is a learned dynamics: given state $s_t$ and action
-        $a_t$, predict $s_{t+1}$. In tensor logic this is:
-
-        $$\widehat{T}[s', s, a] \;=\; \sum_{(s,a,s') \in \text{trajectory}} \mathbf{e}_{s'} \otimes \mathbf{e}_s \otimes \mathbf{e}_a.$$
-
-        A rank-3 transition tensor. Forward simulation is einsum:
-
-        $$\mathbf{s}_{t+1} \;=\; \mathrm{einsum}(\texttt{'ijk,j,k->i'},\, \widehat{T},\, \mathbf{s}_t,\, \mathbf{a}_t).$$
-
-        Multi-step rollouts are repeated einsums, exactly like our forward
-        chaining above — and *they will compound error in exactly the same way*.
-        The phase diagram from §4 transfers directly: world models in this
-        framework are sound only with periodic re-grounding (which in RL
-        usually means an environment query — i.e., you cheated).
-
-        However, the **learned-embedding regime** maps cleanly onto MuZero-style
-        world models: the embedding $E$ is the latent state encoder, $\widehat{T}$
-        is the latent transition model, the temperature dial controls how
-        aggressively the model interpolates between observed transitions. The
-        difference is that tensor logic gives you a *symbolic* extraction step
-        (threshold + re-embed) that MuZero lacks — opening the door to world
-        models that periodically commit to discrete states for downstream
-        symbolic planning.
-
-        That's the strongest version of the Domingos thesis I can find by
-        actually running the experiments: tensor logic isn't a replacement for
-        neural world models, but it could be the *bridge* that makes them
-        symbolic-compatible.
-        """
-    )
+    The actual frontier — and the place where this notebook's framework
+    could go next — is to *use a transformer's embeddings* as the initial
+    $E$ in this construction. Then the relations being composed live in a
+    space whose geometry was shaped by language. Tensor logic provides
+    compositional, sound machinery; the transformer provides
+    semantically-rich vectors. That's a real research direction (Neural
+    Theorem Provers, NLProlog, more recently hybrid retrieval-reasoning),
+    and tensor logic gives it a clean mathematical home.
+    """)
     return
 
 
-# =============================================================================
-# §6.5  TRANSFORMER EMBEDDINGS AS E — building the bridge
-# =============================================================================
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        ## 6.5. Building the bridge — transformer embeddings as $E$
+    mo.md(r"""
+    ## 6.5. Building the bridge — transformer embeddings as $E$
 
-        §6 argued the next step is to **use a pre-trained language model's
-        embeddings as $E$**. Random $E$ gives a Bloom filter (no
-        generalization). Learned $E$ (§5) finds structure from the relation
-        alone. **Transformer $E$** starts with structure derived from world
-        knowledge — *before any training on our relation*.
+    §6 argued the next step is to **use a pre-trained language model's
+    embeddings as $E$**. Random $E$ gives a Bloom filter (no
+    generalization). Learned $E$ (§5) finds structure from the relation
+    alone. **Transformer $E$** starts with structure derived from world
+    knowledge — *before any training on our relation*.
 
-        Concrete test: the canonical KG-completion toy, `capital-of`. We have
-        10 (country, capital) pairs, **hold out (Spain, Madrid)**, and learn a
-        relation tensor $\widehat{R} \in \mathbb{R}^{D \times D}$ (with $E$
-        frozen) so that $E\widehat{R}E^\top \approx P_{\text{train}}$. Then we
-        ask: $\mathbf{e}_{\text{Spain}} \widehat{R} \mathbf{e}_x$ for every
-        candidate capital $x$ — does Madrid win?
+    Concrete test: the canonical KG-completion toy, `capital-of`. We have
+    10 (country, capital) pairs, **hold out (Spain, Madrid)**, and learn a
+    relation tensor $\widehat{R} \in \mathbb{R}^{D \times D}$ (with $E$
+    frozen) so that $E\widehat{R}E^\top \approx P_{\text{train}}$. Then we
+    ask: $\mathbf{e}_{\text{Spain}} \widehat{R} \mathbf{e}_x$ for every
+    candidate capital $x$ — does Madrid win?
 
-        - With **random $E$**: every entity is orthogonal. $\widehat{R}$ can fit
-          training pairs exactly but has nothing to extrapolate to Spain.
-          Held-out rank = chance.
-        - With **transformer $E$** (mean-centered to remove the well-known
-          anisotropy): Spain sits near France/Italy/Portugal; Madrid sits near
-          Paris/Rome/Lisbon. The single relation tensor $\widehat{R}$ that fits
-          the training pairs *also* points Spain → Madrid, **with zero
-          training on that pair**, because of the geometric structure $E$
-          already carries.
+    - With **random $E$**: every entity is orthogonal. $\widehat{R}$ can fit
+      training pairs exactly but has nothing to extrapolate to Spain.
+      Held-out rank = chance.
+    - With **transformer $E$** (mean-centered to remove the well-known
+      anisotropy): Spain sits near France/Italy/Portugal; Madrid sits near
+      Paris/Rome/Lisbon. The single relation tensor $\widehat{R}$ that fits
+      the training pairs *also* points Spain → Madrid, **with zero
+      training on that pair**, because of the geometric structure $E$
+      already carries.
 
-        This is the experiment Domingos's framework predicts but the paper
-        does not run.
-        """
-    )
+    This is the experiment Domingos's framework predicts but the paper
+    does not run.
+    """)
     return
 
 
@@ -1018,7 +932,7 @@ def _(E_xfmr_caps, caps_capitals, caps_countries, random_embeddings):
     n_caps_total = len(caps_countries) + len(caps_capitals)
     d_caps = E_xfmr_caps.shape[1]
     E_rand_caps = random_embeddings(n_caps_total, d_caps, seed=42)
-    return E_rand_caps, d_caps, n_caps_total
+    return (E_rand_caps,)
 
 
 @app.cell
@@ -1120,94 +1034,124 @@ def _(
 
 
 @app.cell
-def _(HELD_CAP, HELD_COUNTRY, mo, rank_rand, rank_xfmr):
-    mo.md(
-        f"""
-        **What we just did.** Same construction, two embedding sources.
+def _(HELD_CAP, mo, rank_rand, rank_xfmr):
+    mo.md(f"""
+    **What we just did.** Same construction, two embedding sources.
 
-        - **Random $E$** ranked `{HELD_CAP}` at **{rank_rand}/10** for the
-          held-out query — i.e., chance. Every entity is orthogonal noise;
-          $\\widehat{{R}}$ memorizes the training pairs but has nothing to
-          extrapolate to Spain.
-        - **Transformer $E$** ranked `{HELD_CAP}` at **{rank_xfmr}/10**.
-          The same einsum that ranked Madrid arbitrarily under random $E$
-          now puts it at the top, *and the top-3 alternatives are all
-          plausible analogical mistakes* (Lisbon — Spain's actual nearest
-          neighbour; Paris — the prototypical European capital). The
-          transformer prior **routes inference through structural neighbours**
-          — exactly what §6's symbol-grounding discussion said the framework
-          needed.
+    - **Random $E$** ranked `{HELD_CAP}` at **{rank_rand}/10** for the
+      held-out query — i.e., chance. Every entity is orthogonal noise;
+      $\\widehat{{R}}$ memorizes the training pairs but has nothing to
+      extrapolate to Spain.
+    - **Transformer $E$** ranked `{HELD_CAP}` at **{rank_xfmr}/10**.
+      The same einsum that ranked Madrid arbitrarily under random $E$
+      now puts it at the top, *and the top-3 alternatives are all
+      plausible analogical mistakes* (Lisbon — Spain's actual nearest
+      neighbour; Paris — the prototypical European capital). The
+      transformer prior **routes inference through structural neighbours**
+      — exactly what §6's symbol-grounding discussion said the framework
+      needed.
 
-        **Punchline.** Tensor logic alone gives soundness without grounding
-        (§1-4) or grounding-by-graph-topology (§5). The transformer alone
-        gives semantic structure but no compositional rules. **Together** you
-        get analogical, sound, compositional inference: the transformer
-        provides $E$, tensor logic provides $\\widehat{{R}}$, and the einsum
-        composes them. This is the strongest version of Domingos's thesis —
-        and to my knowledge the paper itself does not run this experiment.
+    **Punchline.** Tensor logic alone gives soundness without grounding
+    (§1-4) or grounding-by-graph-topology (§5). The transformer alone
+    gives semantic structure but no compositional rules. **Together** you
+    get analogical, sound, compositional inference: the transformer
+    provides $E$, tensor logic provides $\\widehat{{R}}$, and the einsum
+    composes them. This is the strongest version of Domingos's thesis —
+    and to my knowledge the paper itself does not run this experiment.
 
-        **Caveat — what this isn't.** MiniLM has seen `Spain — Madrid` countless
-        times on the open web; we are reading off a prior, not proving the
-        model can extrapolate to unseen facts. The honest test is a held-out
-        relation in a domain the transformer has *not* memorized — proprietary
-        KGs, novel scientific relations, recent events. That experiment is the
-        natural follow-on; this notebook only takes the first step.
-        """
-    )
+    **Caveat — what this isn't.** MiniLM has seen `Spain — Madrid` countless
+    times on the open web; we are reading off a prior, not proving the
+    model can extrapolate to unseen facts. The honest test is a held-out
+    relation in a domain the transformer has *not* memorized — proprietary
+    KGs, novel scientific relations, recent events. That experiment is the
+    natural follow-on; this notebook only takes the first step.
+    """)
     return
 
 
-# =============================================================================
-# §8  CLOSING
-# =============================================================================
 @app.cell
 def _(mo):
-    mo.md(
-        r"""
-        ## Summary of findings
+    mo.md(r"""
+    ## 7. World models — does this framework reach there?
 
-        | Claim from paper §5 | Verdict |
-        |---|---|
-        | $\sigma \approx \sqrt{N/D}$ for membership noise | **holds exactly** (~1% of theory) |
-        | "Sound at $T=0$, unlike LLMs" | **conditionally true**: holds when $D \gg N$ and the bound is small; fails otherwise (small graph + adequate $D$ stays sound up to depth 6) |
-        | "Extract, threshold, re-embed at regular intervals" rescues soundness | **only in the sound regime**; *makes things worse* at moderate $D$ where it re-embeds noise. Not a magic mitigation. |
-        | Learned embeddings enable analogical reasoning with a temperature dial | **yes, and this is the genuine novelty.** Modest $T$ recovers held-out edges by structural analogy |
-        | Foundation for grounded reasoning | **not in this construction.** Random embeddings are ungrounded by definition; learned embeddings are grounded only in graph topology, not in the world |
+    A world model is a learned dynamics: given state $s_t$ and action
+    $a_t$, predict $s_{t+1}$. In tensor logic this is:
 
-        ## What we built
+    $$\widehat{T}[s', s, a] \;=\; \sum_{(s,a,s') \in \text{trajectory}} \mathbf{e}_{s'} \otimes \mathbf{e}_s \otimes \mathbf{e}_a.$$
 
-        - **§1-2.** From-scratch implementation of Domingos's superposition
-          construction. Empirical bound validation matches theory to ~1%.
-        - **§3.** Datalog program (transitive closure) embedded as a $D \times D$
-          tensor; forward chaining as repeated `einsum`.
-        - **§4.** **Headline experiment.** Naive vs re-embedded chaining;
-          phase diagram of $(D, \text{depth}) \to F1$ showing the
-          $D \gtrsim k N$ scaling. Quantifies what "soundness" actually costs.
-        - **§5.** Learned embeddings + temperature dial; held-out-entity
-          analogical inference, with a continuous sweep showing where the
-          analogical signal margin peaks.
-        - **§6-7.** Honest assessment of what the model *knows* (extension, not
-          intension), and how this framework relates to transformers and world
-          models.
-        - **§6.5 (our extension).** Replace random $E$ with embeddings from
-          `all-MiniLM-L6-v2` and run held-out KG completion on a `capital-of`
-          relation. Tensor-logic composition + transformer priors recovers
-          Spain → Madrid by analogy, with no training on that pair. This is
-          the experiment Domingos's prose gestures at but does not run.
+    A rank-3 transition tensor. Forward simulation is einsum:
 
-        ## Where to take this
+    $$\mathbf{s}_{t+1} \;=\; \mathrm{einsum}(\texttt{'ijk,j,k->i'},\, \widehat{T},\, \mathbf{s}_t,\, \mathbf{a}_t).$$
 
-        1. **Held-out *unseen* facts.** §6.5 demonstrates the mechanism on
-           pairs MiniLM has memorized. The honest follow-on is a domain the
-           transformer hasn't seen — proprietary or post-cutoff relations.
-        2. **Test on FB15k-237** — reproduce the §3 experiment from
-           arXiv:2601.17188 at full scale; verify the phase-diagram prediction
-           that $D \approx 1000$ + per-step re-embedding suffices.
-        3. **World model rollouts** — apply the framework to a small gridworld;
-           measure whether the threshold-re-embed step produces stable latent
-           states amenable to symbolic planning.
-        """
-    )
+    Multi-step rollouts are repeated einsums, exactly like our forward
+    chaining above — and *they will compound error in exactly the same way*.
+    The phase diagram from §4 transfers directly: world models in this
+    framework are sound only with periodic re-grounding (which in RL
+    usually means an environment query — i.e., you cheated).
+
+    However, the **learned-embedding regime** maps cleanly onto MuZero-style
+    world models: the embedding $E$ is the latent state encoder, $\widehat{T}$
+    is the latent transition model, the temperature dial controls how
+    aggressively the model interpolates between observed transitions. The
+    difference is that tensor logic gives you a *symbolic* extraction step
+    (threshold + re-embed) that MuZero lacks — opening the door to world
+    models that periodically commit to discrete states for downstream
+    symbolic planning.
+
+    That's the strongest version of the Domingos thesis I can find by
+    actually running the experiments: tensor logic isn't a replacement for
+    neural world models, but it could be the *bridge* that makes them
+    symbolic-compatible.
+    """)
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    ## Summary of findings
+
+    | Claim from paper §5 | Verdict |
+    |---|---|
+    | $\sigma \approx \sqrt{N/D}$ for membership noise | **holds exactly** (~1% of theory) |
+    | "Sound at $T=0$, unlike LLMs" | **conditionally true**: holds when $D \gg N$ and the bound is small; fails otherwise (small graph + adequate $D$ stays sound up to depth 6) |
+    | "Extract, threshold, re-embed at regular intervals" rescues soundness | **only in the sound regime**; *makes things worse* at moderate $D$ where it re-embeds noise. Not a magic mitigation. |
+    | Learned embeddings enable analogical reasoning with a temperature dial | **yes, and this is the genuine novelty.** Modest $T$ recovers held-out edges by structural analogy |
+    | Foundation for grounded reasoning | **not in this construction.** Random embeddings are ungrounded by definition; learned embeddings are grounded only in graph topology, not in the world |
+
+    ## What we built
+
+    - **§1-2.** From-scratch implementation of Domingos's superposition
+      construction. Empirical bound validation matches theory to ~1%.
+    - **§3.** Datalog program (transitive closure) embedded as a $D \times D$
+      tensor; forward chaining as repeated `einsum`.
+    - **§4.** **Headline experiment.** Naive vs re-embedded chaining;
+      phase diagram of $(D, \text{depth}) \to F1$ showing the
+      $D \gtrsim k N$ scaling. Quantifies what "soundness" actually costs.
+    - **§5.** Learned embeddings + temperature dial; held-out-entity
+      analogical inference, with a continuous sweep showing where the
+      analogical signal margin peaks.
+    - **§6-7.** Honest assessment of what the model *knows* (extension, not
+      intension), and how this framework relates to transformers and world
+      models.
+    - **§6.5 (our extension).** Replace random $E$ with embeddings from
+      `all-MiniLM-L6-v2` and run held-out KG completion on a `capital-of`
+      relation. Tensor-logic composition + transformer priors recovers
+      Spain → Madrid by analogy, with no training on that pair. This is
+      the experiment Domingos's prose gestures at but does not run.
+
+    ## Where to take this
+
+    1. **Held-out *unseen* facts.** §6.5 demonstrates the mechanism on
+       pairs MiniLM has memorized. The honest follow-on is a domain the
+       transformer hasn't seen — proprietary or post-cutoff relations.
+    2. **Test on FB15k-237** — reproduce the §3 experiment from
+       arXiv:2601.17188 at full scale; verify the phase-diagram prediction
+       that $D \approx 1000$ + per-step re-embedding suffices.
+    3. **World model rollouts** — apply the framework to a small gridworld;
+       measure whether the threshold-re-embed step produces stable latent
+       states amenable to symbolic planning.
+    """)
     return
 
 
